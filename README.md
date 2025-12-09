@@ -35,9 +35,17 @@ Pipeline for exploring Objaverse assets, indexing their labels, and generating n
    - Replace the placeholder `input_img` in `main.py` with your own PIL image.  
    - Run `python main.py` to save a rendered view (default `view0.png`).
 
+## Working with apple AR Kit:
+I will start by creating the UI (Since ive never really used swift). For the UI, I just need to create a prompt box. Then I will attach a method to be called when the enter button is hit in the prompt box. 
+
+Once the method is called we will invoke a function to call the LLM. I should get the LLM to search the Vector DB based on the prompt, so match the prompt to the `description` key in the data. So `TinyLlama-1.1B` will then return a list of `categories` (These are the actually ObjaVerse labels).
+
+Once the mobile app recieves a list of objects we will need to load them from objaverse (can we do this in swift ? or will we have to request it from a cloud script). 
+
+I will store each object recived on a folder locally called `/Scene_objects`. We then load each object to the AR session in the app. I will then include a `Done` button which when hit will delete the `/Scene_objects` and reset the prompt bar waiting for a new prompt.
+
 ## Notes
 - Objaverse downloads are large; keep `PER_SOURCE` small while experimenting.
 - Zero123-XL inference benefits from GPU/Apple M-series acceleration.
 - If you change output locations, update the paths in the notebook/scripts accordingly.
-
 
