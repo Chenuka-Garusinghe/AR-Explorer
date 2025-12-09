@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "scene_graph_v0.9.json",
+  "title": "SceneGraph v0.9",
+  "type": "object",
+  "required": ["meta", "entities", "eventGraph"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["version"],
+      "properties": {
+        "version":   { "type": "string", "const": "0.9" },
+        "prompt":    { "type": "string" },
+        "units":     { "type": "string", "enum": ["meters"] },
+        "gravity":   { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "global": {
+      "type": "object",
+      "properties": {
+        "skybox": { "type": "string" },
+        "music":  { "type": "string" },
+        "fog": {
+          "type": "object",
+          "properties": {
+            "color":   { "type": "string", "pattern": "^#([A-Fa-f0-9]{6})$" },
+            "density": { "type": "number", "minimum": 0 }
+          },
+          "required": ["color", "density"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "zones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "bounds"],
+        "properties": {
+          "id": { "type": "string" },
+          "bounds": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": { "type": "number" }
+              },
+              {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": { "type": "number" }
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "prefab", "transform", "components"],
+        "properties": {
+          "id":       { "type": "string" },
+          "prefab":   { "type": "string" },
+          "transform": {
+            "type": "object",
+            "required": ["pos"],
+            "properties": {
+              "pos": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": { "type": "number" }
+              },
+              "rot": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": { "type": "number" }
+              },
+              "scale": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": { "type": "number", "exclusiveMinimum": 0 }
+              }
+            },
+            "additionalProperties": false
+          },
+          "components": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type":   { "type": "string" },
+                "params": { "type": "object" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "eventGraph": {
+      "type": "object",
+      "required": ["nodes"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id":     { "type": "string" },
+              "event":  { "type": "string" },
+              "target": { "type": "string" },
+              "fire":   { "type": "string" },
+              "action": { "type": "string" },
+              "listen": { "type": "string" },
+              "panel":  { "type": "string" }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

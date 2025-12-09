@@ -1,0 +1,22 @@
+# Environment and tooling
+.env
+.venv
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Notebook artifacts
+.ipynb_checkpoints/
+
+# Data and large assets
+README_files/
+data/
+*.parquet
+*.glb
+*.obj
+*.stl
+*.ply
+
+# OS noise
+.DS_Store
