@@ -54,3 +54,4 @@ debugpy-run
 
 # for deepfloyd if
 sentencepiece
+requests
