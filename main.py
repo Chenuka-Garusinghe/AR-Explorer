@@ -1,4 +1,5 @@
 import objaverse.xl as oxl
+import argparse
 import pandas as pd
 import os
 import requests
@@ -17,46 +18,47 @@ OUTPUT_DIR = "data/my_objaverse_subset"  # change if you want a different folder
 PER_SOURCE = 2  # objects per source; set to None to download everything (very large)
 RANDOM_SEED = 0
 
-annotations = oxl.get_annotations(download_dir=ANNOTATION_CACHE)
-print(f"Loaded {len(annotations):,} annotations")
 
-# Pick a subset to download.
-if PER_SOURCE:
-    objects_df = (
-        annotations.groupby("source", group_keys=False)
-        .apply(
-            lambda df: df.sample(n=min(PER_SOURCE, len(df)), random_state=RANDOM_SEED)
+def load_annotations():
+    annotations = oxl.get_annotations(download_dir=ANNOTATION_CACHE)
+    print(f"Loaded {len(annotations):,} annotations")
+    return annotations
+
+
+def prepare_subset(annotations: pd.DataFrame) -> pd.DataFrame:
+    if PER_SOURCE:
+        objects_df = (
+            annotations.groupby("source", group_keys=False)
+            .apply(
+                lambda df: df.sample(
+                    n=min(PER_SOURCE, len(df)), random_state=RANDOM_SEED
+                )
+            )
+            .reset_index(drop=True)
         )
-        .reset_index(drop=True)
-    )
-else:
-    objects_df = annotations.copy()
+    else:
+        objects_df = annotations.copy()
 
-print(f"Prepared {len(objects_df):,} objects to download")
-objects_df.head()
-
-PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
-pc = Pinecone(api_key=PINECONE_API_KEY)
-
-# To get the unique host for an index,
-# see https://docs.pinecone.io/guides/manage-data/target-an-index
-index = pc.Index(name="objaverse-index")
+    print(f"Prepared {len(objects_df):,} objects to download")
+    objects_df.head()
+    return objects_df
 
 
-def search_categories(query_text: str, top_k: int = 5):
+def init_pinecone():
+    PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+    # To get the unique host for an index,
+    # see https://docs.pinecone.io/guides/manage-data/target-an-index
+    return pc.Index(name="objaverse-index")
+
+
+def search_categories(index, query_text: str, top_k: int = 5):
     results = index.search(
         namespace="objaverse-namespace",
         query={"inputs": {"text": query_text}, "top_k": top_k},  # type: ignore
         fields=["category", "chunk_text"],
     )
     return results
-
-
-user_prompt = (
-    "Find 3–5 everyday household objects (e.g., kettle, coffee mug, desk lamp, backpack, office chair) suitable for an office desk scene."
-)
-search_results = search_categories(user_prompt, top_k=5)
-hits = search_results.result["hits"]
 
 
 def format_hits_for_llm(hits):
@@ -152,129 +154,174 @@ Candidates:
     return positions_by_index
 
 
-# usage
-positions_by_index = tinyllama_layout(user_prompt, hits)
-print("Positions by index:", positions_by_index)
+def ensure_name_column(annotations: pd.DataFrame) -> pd.DataFrame:
+    if "name" not in annotations.columns:
+        annotations["name"] = (
+            annotations["fileIdentifier"]
+            .str.extract(r"/([^/]+?)(?:\.[a-zA-Z0-9]+)?$", expand=False)
+            .fillna("")
+        )
+    return annotations
 
 
-import requests
-
-if "name" not in annotations.columns:
-    annotations["name"] = (
-        annotations["fileIdentifier"]
-        .str.extract(r"/([^/]+?)(?:\.[a-zA-Z0-9]+)?$", expand=False)
-        .fillna("")
-    )
-
-objects_to_display: dict = {}
-for key in positions_by_index:
-    obj_name = hits[key]["fields"]["category"]
-    filtered_objects_data = annotations[
-        annotations["name"].str.contains(obj_name, case=False, na=False)
-    ]
-    objects_to_display[key] = filtered_objects_data
+def build_objects_to_display(annotations, hits, positions_by_index):
+    objects_to_display: dict = {}
+    for key in positions_by_index:
+        obj_name = hits[key]["fields"]["category"]
+        filtered_objects_data = annotations[
+            annotations["name"].str.contains(obj_name, case=False, na=False)
+        ]
+        objects_to_display[key] = filtered_objects_data
+    return objects_to_display
 
 
-finite_files = []
-rows = []
+def collect_finite_annotations(objects_to_display):
+    finite_files = []
+    rows = []
 
-for key, df in objects_to_display.items():
-    df = df.iloc[:30].copy()
-    df["pos_key"] = key
-    rows.append(df)
-    for _, row in df.iterrows():
-        url = row["fileIdentifier"]
+    for key, df in objects_to_display.items():
+        df = df.iloc[:30].copy()
+        df["pos_key"] = key
+        rows.append(df)
+        for _, row in df.iterrows():
+            url = row["fileIdentifier"]
 
-        try:
-            head = requests.head(url, allow_redirects=True, timeout=5)
-        except requests.RequestException as e:
-            print("HEAD failed:", url, e)
-            continue
+            try:
+                head = requests.head(url, allow_redirects=True, timeout=5)
+            except requests.RequestException as e:
+                print("HEAD failed:", url, e)
+                continue
 
-        if head.status_code == 404:
-            continue
+            if head.status_code == 404:
+                continue
 
-        # convert GitHub "blob" URL to raw, oxl takes too long
-        if (
-            "github.com" in url
-            and "/blob/" in url
-            and "raw.githubusercontent.com" not in url
-        ):
-            url = url.replace("github.com/", "raw.githubusercontent.com/").replace(
-                "/blob/", "/"
-            )
+            # convert GitHub "blob" URL to raw, oxl takes too long
+            if (
+                "github.com" in url
+                and "/blob/" in url
+                and "raw.githubusercontent.com" not in url
+            ):
+                url = url.replace("github.com/", "raw.githubusercontent.com/").replace(
+                    "/blob/", "/"
+                )
 
-        try:
-            r = requests.get(url, stream=True, timeout=20)
-            r.raise_for_status()
-            finite_files.append(url)
-        except requests.RequestException as e:
-            print("GET failed:", url, e)
-            continue
+            try:
+                r = requests.get(url, stream=True, timeout=20)
+                r.raise_for_status()
+                finite_files.append(url)
+            except requests.RequestException as e:
+                print("GET failed:", url, e)
+                continue
 
-finite_annotations_df = pd.concat(rows, ignore_index=True)
-finite_annotations_df = finite_annotations_df.drop_duplicates(subset=["fileIdentifier"])
+    if rows:
+        finite_annotations_df = pd.concat(rows, ignore_index=True)
+        finite_annotations_df = finite_annotations_df.drop_duplicates(
+            subset=["fileIdentifier"]
+        )
+    else:
+        finite_annotations_df = pd.DataFrame()
+
+    return finite_annotations_df
+
 
 def github_blob_to_raw(url: str) -> str:
     if "github.com" in url and "/blob/" in url:
-        return url.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/")
+        return url.replace("github.com/", "raw.githubusercontent.com/").replace(
+            "/blob/", "/"
+        )
     return url
 
-download_dir = "./data/objaverse_found_custom"
-os.makedirs(download_dir, exist_ok=True)
 
-parent_folder = "parent_folder"
-zip_path = os.path.join(download_dir, "assets_bundle.zip")
+def download_and_zip(finite_annotations_df, positions_by_index):
+    download_dir = "./data/objaverse_found_custom"
+    os.makedirs(download_dir, exist_ok=True)
 
-folder_n = 0
+    parent_folder = "parent_folder"
+    # zip_path = os.path.join(download_dir, "assets_bundle.zip")
 
-with ZipFile(zip_path, "w") as zf:
-    # generate a pair of random numbers that is the length of positions_by_index apart
-    fixed_distance = len(positions_by_index)
-    num_a = int(random.uniform(0, fixed_distance))
-    num_b = abs(fixed_distance - num_a)
+    folder_n = 0
+
+    with ZipFile(zip_path, "w") as zf:
+        # generate a pair of random numbers that is the length of positions_by_index apart
+        fixed_distance = len(positions_by_index)
+        num_a = int(random.uniform(0, fixed_distance))
+        num_b = abs(fixed_distance - num_a)
+
+        for _, row in finite_annotations_df.iloc[num_a:num_b].iterrows():
+            url = github_blob_to_raw(row["fileIdentifier"])
+
+            try:
+                r = requests.get(url, stream=True, timeout=20)
+                r.raise_for_status()
+            except requests.RequestException as e:
+                print("GET failed:", url, e)
+                continue
+
+            obj_filename = os.path.basename(urlparse(url).path)
+            if not obj_filename.lower().endswith(".glb"):
+                continue
+
+            # Save the .glb locally (so ZipFile can write it)
+            out_path_obj = os.path.join(download_dir, obj_filename)
+            with open(out_path_obj, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    if chunk:
+                        f.write(chunk)
+
+            # Write a per-object pos.txt (avoid overwriting)
+            out_path_txt = os.path.join(download_dir, f"pos_{folder_n}.txt")
+            pos_key = int(row["pos_key"])
+            with open(out_path_txt, "w") as f_txt:
+                f_txt.write(json.dumps(positions_by_index[pos_key]))
+
+            # Put both into parent_folder/folder_n/ inside the zip
+            folder_name = f"folder_{folder_n}"
+            zf.write(
+                out_path_obj, arcname=f"{parent_folder}/{folder_name}/{obj_filename}"
+            )
+            zf.write(out_path_txt, arcname=f"{parent_folder}/{folder_name}/pos.txt")
+
+            folder_n += 1
+
+    if folder_n == 0:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        print("No .glb objects found; zip was not created.")
+        # Send 404 from this program
+        raise HTTPException(status_code=400, detail="No folders found")
+        sys.exit(1)
+
+    print("Created zip:", zip_path)
+    return zip_path
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prompt", required=True)
+    parser.add_argument("--zip-path", required=True)
+    args = parser.parse_args()
     
-    for _, row in finite_annotations_df.iloc[num_a:num_b].iterrows():
-        url = github_blob_to_raw(row["fileIdentifier"])
+    global user_prompt
+    user_prompt = args.prompt
 
-        try:
-            r = requests.get(url, stream=True, timeout=20)
-            r.raise_for_status()
-        except requests.RequestException as e:
-            print("GET failed:", url, e)
-            continue
+    global zip_path
+    zip_path = args.zip_path
 
-        obj_filename = os.path.basename(urlparse(url).path)
-        if not obj_filename.lower().endswith(".glb"):
-            continue
+    annotations = load_annotations()
+    prepare_subset(annotations)
 
-        # Save the .glb locally (so ZipFile can write it)
-        out_path_obj = os.path.join(download_dir, obj_filename)
-        with open(out_path_obj, "wb") as f:
-            for chunk in r.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
+    index = init_pinecone()
+    search_results = search_categories(index, user_prompt, top_k=5)
+    hits = search_results.result["hits"]
 
-        # Write a per-object pos.txt (avoid overwriting)
-        out_path_txt = os.path.join(download_dir, f"pos_{folder_n}.txt")
-        pos_key = int(row["pos_key"])
-        with open(out_path_txt, "w") as f_txt:
-            f_txt.write(json.dumps(positions_by_index[pos_key]))
+    positions_by_index = tinyllama_layout(user_prompt, hits)
+    print("Positions by index:", positions_by_index)
 
-        # Put both into parent_folder/folder_n/ inside the zip
-        folder_name = f"folder_{folder_n}"
-        zf.write(out_path_obj, arcname=f"{parent_folder}/{folder_name}/{obj_filename}")
-        zf.write(out_path_txt, arcname=f"{parent_folder}/{folder_name}/pos.txt")
+    annotations = ensure_name_column(annotations)
+    objects_to_display = build_objects_to_display(annotations, hits, positions_by_index)
+    finite_annotations_df = collect_finite_annotations(objects_to_display)
+    download_and_zip(finite_annotations_df, positions_by_index)
+    return 0
 
-        folder_n += 1
-        
-if folder_n == 0:
-    if os.path.exists(zip_path):
-        os.remove(zip_path)
-    print("No .glb objects found; zip was not created.") 
-    # Send 404 from this program
-    raise HTTPException(status_code=400, detail="No folders found")
-    sys.exit(1)
-    
-print("Created zip:", zip_path)
-
+if __name__ == "__main__":
+    raise SystemExit(main())
