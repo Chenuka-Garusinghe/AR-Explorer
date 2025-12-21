@@ -49,3 +49,6 @@ I will store each object recived on a folder locally called `/Scene_objects`. We
 - Zero123-XL inference benefits from GPU/Apple M-series acceleration.
 - If you change output locations, update the paths in the notebook/scripts accordingly.
 
+
+# Issues that I had
+## Problems with the VM:

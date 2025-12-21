@@ -105,7 +105,7 @@ Candidates:
 
     try:
         response = ollama.chat(
-            model="tinyllama",
+            model="tinyllama:latest",
             messages=[
                 {
                     "role": "system",
@@ -289,7 +289,7 @@ def download_and_zip(finite_annotations_df, positions_by_index):
         print("No .glb objects found; zip was not created.")
         # Send 404 from this program
         raise HTTPException(status_code=400, detail="No folders found")
-        sys.exit(1)
+        # sys.exit(1)
 
     print("Created zip:", zip_path)
     return zip_path

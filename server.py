@@ -5,13 +5,17 @@ import subprocess
 import uuid
 import os
 import requests
+import sys
+import signal
 
 app = FastAPI()
 
-PYTHON = "python3"
-PROGRAM = os.path.abspath("./main.py")  # adjust path if needed
+# Use the *current* interpreter (your .venv python when uvicorn runs inside venv)
+PYTHON = sys.executable
+PROGRAM = os.path.abspath("./main.py")
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama:latest")  # safest default
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -19,38 +23,54 @@ class GenerateRequest(BaseModel):
 @app.post("/generate")
 def generate(req: GenerateRequest):
     ensure_ollama_ready()
+
     job_id = uuid.uuid4().hex
     out_dir = f"/tmp/ar_jobs/{job_id}"
     os.makedirs(out_dir, exist_ok=True)
-
     zip_path = os.path.join(out_dir, "assets_bundle.zip")
 
-    # run PROGRAM synchronously
-    proc = subprocess.run(
-        [PYTHON, PROGRAM, "--prompt", req.prompt, "--zip-path", zip_path],
-        capture_output=True,
-        text=True,
-    )
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"  # make prints flush
+
+    try:
+        proc = subprocess.run(
+            [PYTHON, PROGRAM, "--prompt", req.prompt, "--zip-path", zip_path],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(PROGRAM),   # important for your relative data/ paths
+            env=env,
+            timeout=900,                    # 15 min; adjust if needed
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="PROGRAM_timeout")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "PROGRAM_spawn_failed", "msg": str(e)})
 
     if proc.returncode != 0:
+        sig = None
+        if proc.returncode < 0:
+            try:
+                sig = signal.Signals(-proc.returncode).name
+            except Exception:
+                sig = f"SIG{-proc.returncode}"
+
         raise HTTPException(
             status_code=500,
             detail={
                 "error": "PROGRAM_failed",
-                "stdout_tail": proc.stdout[-2000:],
-                "stderr_tail": proc.stderr[-2000:],
+                "python": PYTHON,
+                "program": PROGRAM,
+                "returncode": proc.returncode,
+                "signal": sig,
+                "stdout_tail": (proc.stdout or "")[-4000:],
+                "stderr_tail": (proc.stderr or "")[-8000:],
             },
         )
 
     if not os.path.exists(zip_path) or os.path.getsize(zip_path) == 0:
         raise HTTPException(status_code=404, detail="No assets were produced for this prompt.")
 
-    return FileResponse(
-        zip_path,
-        media_type="application/zip",
-        filename="assets_bundle.zip",
-    )
-
+    return FileResponse(zip_path, media_type="application/zip", filename="assets_bundle.zip")
 
 def check_ollama(timeout: float = 1.0) -> dict:
     """
@@ -80,7 +100,8 @@ def check_ollama(timeout: float = 1.0) -> dict:
         r.raise_for_status()
         models = r.json().get("models", [])
         names = {m.get("name") for m in models if isinstance(m, dict)}
-        status["model_installed"] = (OLLAMA_MODEL in names)
+        status["model_installed"] = (
+    (OLLAMA_MODEL in names) or any(n.startswith(f"{OLLAMA_MODEL}:") for n in names)) # type: ignore
     except Exception as e:
         status["error"] = f"ollama_tags_failed: {e}"
         return status
@@ -102,7 +123,8 @@ def health():
 
 
 def ensure_ollama_ready():
-    s = check_ollama(timeout=1.0)
+    s = check_ollama(timeout=3.0)
     if not s["ok"]:
+        print("Ollama failed to be found")
         # Fail fast with a clear message instead of hanging later
         raise HTTPException(status_code=503, detail=s)
