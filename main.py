@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 import ollama
 import json
 from zipfile import ZipFile
-import random
 from fastapi import HTTPException
 import sys
 from pinecone import Pinecone
@@ -40,7 +39,6 @@ def prepare_subset(annotations: pd.DataFrame) -> pd.DataFrame:
         objects_df = annotations.copy()
 
     print(f"Prepared {len(objects_df):,} objects to download")
-    objects_df.head()
     return objects_df
 
 
@@ -161,6 +159,7 @@ def ensure_name_column(annotations: pd.DataFrame) -> pd.DataFrame:
             .str.extract(r"/([^/]+?)(?:\.[a-zA-Z0-9]+)?$", expand=False)
             .fillna("")
         )
+    print(f"Ensured 'name' column exists with {annotations['name'].notnull().sum():,} non-null entries")
     return annotations
 
 
@@ -169,57 +168,53 @@ def build_objects_to_display(annotations, hits, positions_by_index):
     for key in positions_by_index:
         obj_name = hits[key]["fields"]["category"]
         filtered_objects_data = annotations[
-            annotations["name"].str.contains(obj_name, case=False, na=False)
+            annotations["name"].str.contains(obj_name, case=False, na=False, regex=False)
         ]
         objects_to_display[key] = filtered_objects_data
     return objects_to_display
 
 
+def is_glb_identifier(identifier: str) -> bool:
+    """
+    Return True when the URL/path clearly points to a .glb asset.
+    Uses only the path portion so query strings do not interfere.
+    """
+    try:
+        return urlparse(str(identifier)).path.lower().endswith(".glb")
+    except Exception:
+        return False
+
+
 def collect_finite_annotations(objects_to_display):
-    finite_files = []
     rows = []
 
     for key, df in objects_to_display.items():
-        df = df.iloc[:30].copy()
-        df["pos_key"] = key
-        rows.append(df)
-        for _, row in df.iterrows():
-            url = row["fileIdentifier"]
+        glb_candidates = df[df["fileIdentifier"].apply(is_glb_identifier)]
+        if glb_candidates.empty:
+            continue
+
+        # keep a small batch per position and remember which position it maps to
+        glb_candidates = glb_candidates.iloc[:30].copy()
+        glb_candidates["pos_key"] = key
+
+        for _, row in glb_candidates.iterrows():
+            url = github_blob_to_raw(row["fileIdentifier"])
 
             try:
                 head = requests.head(url, allow_redirects=True, timeout=5)
+                if head.status_code == 404:
+                    continue
             except requests.RequestException as e:
                 print("HEAD failed:", url, e)
                 continue
 
-            if head.status_code == 404:
-                continue
+            rows.append({**row.to_dict(), "fileIdentifier": url})
 
-            # convert GitHub "blob" URL to raw, oxl takes too long
-            if (
-                "github.com" in url
-                and "/blob/" in url
-                and "raw.githubusercontent.com" not in url
-            ):
-                url = url.replace("github.com/", "raw.githubusercontent.com/").replace(
-                    "/blob/", "/"
-                )
-
-            try:
-                r = requests.get(url, stream=True, timeout=20)
-                r.raise_for_status()
-                finite_files.append(url)
-            except requests.RequestException as e:
-                print("GET failed:", url, e)
-                continue
-
-    if rows:
-        finite_annotations_df = pd.concat(rows, ignore_index=True)
-        finite_annotations_df = finite_annotations_df.drop_duplicates(
-            subset=["fileIdentifier"]
-        )
-    else:
-        finite_annotations_df = pd.DataFrame()
+    finite_annotations_df = (
+        pd.DataFrame(rows).drop_duplicates(subset=["fileIdentifier", "pos_key"])
+        if rows
+        else pd.DataFrame()
+    )
 
     return finite_annotations_df
 
@@ -233,21 +228,29 @@ def github_blob_to_raw(url: str) -> str:
 
 
 def download_and_zip(finite_annotations_df, positions_by_index):
+    if finite_annotations_df.empty:
+        print("No .glb candidates available after filtering.")
+        raise HTTPException(status_code=400, detail="No .glb files found")
+
     download_dir = "./data/objaverse_found_custom"
     os.makedirs(download_dir, exist_ok=True)
+    zip_dir = os.path.dirname(zip_path)
+    if zip_dir:
+        os.makedirs(zip_dir, exist_ok=True)
 
     parent_folder = "parent_folder"
     # zip_path = os.path.join(download_dir, "assets_bundle.zip")
 
     folder_n = 0
 
-    with ZipFile(zip_path, "w") as zf:
-        # generate a pair of random numbers that is the length of positions_by_index apart
-        fixed_distance = len(positions_by_index)
-        num_a = int(random.uniform(0, fixed_distance))
-        num_b = abs(fixed_distance - num_a)
+    rows_to_fetch = (
+        finite_annotations_df.sample(frac=1, random_state=RANDOM_SEED)
+        .groupby("pos_key", group_keys=False)
+        .head(1)
+    )
 
-        for _, row in finite_annotations_df.iloc[num_a:num_b].iterrows():
+    with ZipFile(zip_path, "w") as zf:
+        for _, row in rows_to_fetch.iterrows():
             url = github_blob_to_raw(row["fileIdentifier"])
 
             try:
@@ -288,7 +291,7 @@ def download_and_zip(finite_annotations_df, positions_by_index):
             os.remove(zip_path)
         print("No .glb objects found; zip was not created.")
         # Send 404 from this program
-        raise HTTPException(status_code=400, detail="No folders found")
+        raise HTTPException(status_code=400, detail="No .glb files found")
         # sys.exit(1)
 
     print("Created zip:", zip_path)

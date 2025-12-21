@@ -23,7 +23,7 @@ class GenerateRequest(BaseModel):
 @app.post("/generate")
 def generate(req: GenerateRequest):
     ensure_ollama_ready()
-
+    print("Ollama found, starting program")
     job_id = uuid.uuid4().hex
     out_dir = f"/tmp/ar_jobs/{job_id}"
     os.makedirs(out_dir, exist_ok=True)
