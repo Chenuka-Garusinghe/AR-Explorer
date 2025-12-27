@@ -20,8 +20,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama:latest")  # safest default
 class GenerateRequest(BaseModel):
     prompt: str
 
-@app.post("/generate")
-def generate(req: GenerateRequest):
+def run_generation(prompt: str):
     ensure_ollama_ready()
     print("Ollama found, starting program")
     job_id = uuid.uuid4().hex
@@ -34,7 +33,7 @@ def generate(req: GenerateRequest):
 
     try:
         proc = subprocess.run(
-            [PYTHON, PROGRAM, "--prompt", req.prompt, "--zip-path", zip_path],
+            [PYTHON, PROGRAM, "--prompt", prompt, "--zip-path", zip_path],
             capture_output=True,
             text=True,
             cwd=os.path.dirname(PROGRAM),   # important for your relative data/ paths
@@ -70,6 +69,19 @@ def generate(req: GenerateRequest):
     if not os.path.exists(zip_path) or os.path.getsize(zip_path) == 0:
         raise HTTPException(status_code=404, detail="No assets were produced for this prompt.")
 
+    return zip_path
+
+@app.post("/generate")
+def generate(req: GenerateRequest):
+    zip_path = run_generation(req.prompt)
+    return FileResponse(zip_path, media_type="application/zip", filename="assets_bundle.zip")
+
+@app.get("/generate")
+def generate_get(prompt: str):
+    """
+    Convenience GET endpoint so callers can supply ?prompt=... and receive the zip.
+    """
+    zip_path = run_generation(prompt)
     return FileResponse(zip_path, media_type="application/zip", filename="assets_bundle.zip")
 
 def check_ollama(timeout: float = 1.0) -> dict:

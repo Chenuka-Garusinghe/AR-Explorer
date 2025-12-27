@@ -10,6 +10,8 @@ from zipfile import ZipFile
 from fastapi import HTTPException
 import sys
 from pinecone import Pinecone
+import subprocess
+import shutil
 
 
 ANNOTATION_CACHE = "data/objaverse_annotations"
@@ -226,6 +228,78 @@ def github_blob_to_raw(url: str) -> str:
         )
     return url
 
+def find_usdzconvert() -> str | None:
+    """
+    Try to locate usdzconvert via env override, PATH, or xcrun -f.
+    """
+    env_bin = os.getenv("USDZCONVERT_BIN")
+    if env_bin and os.path.exists(env_bin):
+        return env_bin
+
+    which_bin = shutil.which("usdzconvert")
+    if which_bin:
+        return which_bin
+
+    xcrun_bin = shutil.which("xcrun")
+    if xcrun_bin:
+        try:
+            proc = subprocess.run(
+                [xcrun_bin, "-f", "usdzconvert"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode == 0:
+                candidate = proc.stdout.strip()
+                if candidate and os.path.exists(candidate):
+                    return candidate
+        except Exception:
+            pass
+    return None
+
+
+def convert_glb_to_usdz(glb_path: str) -> str:
+    """
+    Convert a .glb to .usdz using Apple's `usdzconvert` tool.
+    Falls back to the original .glb if the tool is unavailable unless REQUIRE_USDZ=1.
+    """
+    require_usdz = os.getenv("REQUIRE_USDZ", "0") == "1"
+    usdzconvert_bin = find_usdzconvert()
+    if not usdzconvert_bin:
+        msg = "usdzconvert not found; keeping .glb (set REQUIRE_USDZ=1 to fail instead)."
+        print(msg)
+        if require_usdz:
+            raise HTTPException(status_code=500, detail=msg)
+        return glb_path
+
+    usdz_path = os.path.splitext(glb_path)[0] + ".usdz"
+    try:
+        proc = subprocess.run(
+            [usdzconvert_bin, glb_path, usdz_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        msg = "usdzconvert tool not found when invoking conversion."
+        print(msg)
+        if require_usdz:
+            raise HTTPException(status_code=500, detail=msg)
+        return glb_path
+
+    if proc.returncode != 0 or not os.path.exists(usdz_path):
+        detail = {
+            "error": "usdzconvert_failed",
+            "stdout": (proc.stdout or "")[-1000:],
+            "stderr": (proc.stderr or "")[-1000:],
+        }
+        print("USDZ conversion failed; keeping .glb", detail)
+        if require_usdz:
+            raise HTTPException(status_code=500, detail=detail)
+        return glb_path
+
+    return usdz_path
+
 
 def download_and_zip(finite_annotations_df, positions_by_index):
     if finite_annotations_df.empty:
@@ -271,6 +345,9 @@ def download_and_zip(finite_annotations_df, positions_by_index):
                     if chunk:
                         f.write(chunk)
 
+            # Convert to USDZ for AR-friendly format (fallback to .glb if converter missing)
+            converted_path = convert_glb_to_usdz(out_path_obj)
+
             # Write a per-object pos.txt (avoid overwriting)
             out_path_txt = os.path.join(download_dir, f"pos_{folder_n}.txt")
             pos_key = int(row["pos_key"])
@@ -280,7 +357,8 @@ def download_and_zip(finite_annotations_df, positions_by_index):
             # Put both into parent_folder/folder_n/ inside the zip
             folder_name = f"folder_{folder_n}"
             zf.write(
-                out_path_obj, arcname=f"{parent_folder}/{folder_name}/{obj_filename}"
+                converted_path,
+                arcname=f"{parent_folder}/{folder_name}/{os.path.basename(converted_path)}",
             )
             zf.write(out_path_txt, arcname=f"{parent_folder}/{folder_name}/pos.txt")
 

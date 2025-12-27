@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4D8308D92EF8126600533CEB /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 4D8308D82EF8126600533CEB /* Alamofire */; };
+		4D8308E32EF8283900533CEB /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 4D8308E22EF8283900533CEB /* ZIPFoundation */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		4DA028912EE85DFA007DFB8C /* LLMVerse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLMVerse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +28,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4D8308D92EF8126600533CEB /* Alamofire in Frameworks */,
+				4D8308E32EF8283900533CEB /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +72,9 @@
 			);
 			name = LLMVerse;
 			packageProductDependencies = (
+				4D8308D82EF8126600533CEB /* Alamofire */,
+				4D8308DA2EF8126600533CEB /* AlamofireDynamic */,
+				4D8308E22EF8283900533CEB /* ZIPFoundation */,
 			);
 			productName = LLMVerse;
 			productReference = 4DA028912EE85DFA007DFB8C /* LLMVerse.app */;
@@ -94,6 +104,10 @@
 			);
 			mainGroup = 4DA028882EE85DFA007DFB8C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4D8308D72EF8126600533CEB /* XCRemoteSwiftPackageReference "Alamofire" */,
+				4D8308E12EF8283900533CEB /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4DA028922EE85DFA007DFB8C /* Products */;
 			projectDirPath = "";
@@ -334,6 +348,43 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		4D8308D72EF8126600533CEB /* XCRemoteSwiftPackageReference "Alamofire" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Alamofire/Alamofire?tab=readme-ov-file";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.11.0;
+			};
+		};
+		4D8308E12EF8283900533CEB /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.20;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4D8308D82EF8126600533CEB /* Alamofire */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4D8308D72EF8126600533CEB /* XCRemoteSwiftPackageReference "Alamofire" */;
+			productName = Alamofire;
+		};
+		4D8308DA2EF8126600533CEB /* AlamofireDynamic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4D8308D72EF8126600533CEB /* XCRemoteSwiftPackageReference "Alamofire" */;
+			productName = AlamofireDynamic;
+		};
+		4D8308E22EF8283900533CEB /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4D8308E12EF8283900533CEB /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4DA028892EE85DFA007DFB8C /* Project object */;
 }

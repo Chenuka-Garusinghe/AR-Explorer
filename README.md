@@ -52,3 +52,16 @@ I will store each object recived on a folder locally called `/Scene_objects`. We
 
 # Issues that I had
 ## Problems with the VM:
+
+
+
+# Running the server:
+- From repo root, set up Python deps (ideally in a venv): python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install -r
+   requirements.txt && pip install fastapi uvicorn pydantic requests.
+- Start Ollama locally and ensure the TinyLlama model is installed (ollama pull tinyllama:latest); set any overrides like OLLAMA_MODEL if you don’t want the
+   default. Also export PINECONE_API_KEY and have an index named objaverse-index ready (needed by main.py), and optionally make sure Apple’s usdzconvert is on
+   PATH if you want USDZ output.
+- Run the API: uvicorn server:app --host 0.0.0.0 --port 8000 (run this in the repo directory so server.py can locate main.py).
+- Verify readiness: curl http://localhost:8000/health (returns 200 only if Ollama + model are reachable).
+- Generate: curl -X POST http://localhost:8000/generate -H "Content-Type: application/json" -d '{"prompt":"your scene prompt"}' -o assets_bundle.zip (or GET
+   with ?prompt=...); it streams back the zip created by main.py.
