@@ -1,13 +1,16 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 import subprocess
 import uuid
 import os
 import requests
 import sys
 import signal
-from fastapi import FastAPI, HTTPException, Form
 
+
+class GenerateRequest(BaseModel):
+    prompt: str
 
 app = FastAPI()
 
@@ -69,6 +72,10 @@ def run_generation(prompt: str):
 
     return zip_path
 
+@app.post("/generate")
+def generate(req: GenerateRequest):
+    zip_path = run_generation(req.prompt)
+    return FileResponse(zip_path, media_type="application/zip", filename="assets_bundle.zip")
 
 @app.get("/generate")
 def generate_get(prompt: str):

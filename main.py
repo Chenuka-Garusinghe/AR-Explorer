@@ -228,35 +228,6 @@ def github_blob_to_raw(url: str) -> str:
         )
     return url
 
-def find_usdzconvert() -> str | None:
-    """
-    Try to locate usdzconvert via env override, PATH, or xcrun -f.
-    """
-    env_bin = os.getenv("USDZCONVERT_BIN")
-    if env_bin and os.path.exists(env_bin):
-        return env_bin
-
-    which_bin = shutil.which("usdzconvert")
-    if which_bin:
-        return which_bin
-
-    xcrun_bin = shutil.which("xcrun")
-    if xcrun_bin:
-        try:
-            proc = subprocess.run(
-                [xcrun_bin, "-f", "usdzconvert"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if proc.returncode == 0:
-                candidate = proc.stdout.strip()
-                if candidate and os.path.exists(candidate):
-                    return candidate
-        except Exception:
-            pass
-    return None
-
 
 # def convert_glb_to_usdz(glb_path: str) -> str:
     # """
