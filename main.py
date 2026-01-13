@@ -8,10 +8,10 @@ import ollama
 import json
 from zipfile import ZipFile
 from fastapi import HTTPException
-import sys
 from pinecone import Pinecone
 import subprocess
 import shutil
+import bpy
 
 
 ANNOTATION_CACHE = "data/objaverse_annotations"
@@ -258,49 +258,48 @@ def find_usdzconvert() -> str | None:
     return None
 
 
-def convert_glb_to_usdz(glb_path: str) -> str:
-    """
-    Convert a .glb to .usdz using Apple's `usdzconvert` tool.
-    Falls back to the original .glb if the tool is unavailable unless REQUIRE_USDZ=1.
-    """
-    require_usdz = os.getenv("REQUIRE_USDZ", "0") == "1"
-    usdzconvert_bin = find_usdzconvert()
-    if not usdzconvert_bin:
-        msg = "usdzconvert not found; keeping .glb (set REQUIRE_USDZ=1 to fail instead)."
-        print(msg)
-        if require_usdz:
-            raise HTTPException(status_code=500, detail=msg)
-        return glb_path
+# def convert_glb_to_usdz(glb_path: str) -> str:
+    # """
+    # Convert a .glb to .usdz using Blender's USD exporter.
+    # Falls back to the original .glb if conversion fails unless REQUIRE_USDZ=1.
+    # """
+    # require_usdz = os.getenv("REQUIRE_USDZ") == "1"
+    # usdz_path = os.path.splitext(glb_path)[0] + ".usdz"
 
-    usdz_path = os.path.splitext(glb_path)[0] + ".usdz"
-    try:
-        proc = subprocess.run(
-            [usdzconvert_bin, glb_path, usdz_path],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError:
-        msg = "usdzconvert tool not found when invoking conversion."
-        print(msg)
-        if require_usdz:
-            raise HTTPException(status_code=500, detail=msg)
-        return glb_path
+    # # Try to request USDZ explicitly when the Blender build exposes the property
+    # export_kwargs = {
+    #     "filepath": usdz_path,
+    #     "export_textures": True,
+    #     "selected_objects_only": False,
+    # }
+    # try:
+    #     export_props = bpy.ops.wm.usd_export.get_rna_type().properties.keys()  # type: ignore
+    #     if "usd_format" in export_props:
+    #         export_kwargs["usd_format"] = "USDZ"
+    # except Exception:
+    #     pass  # Fall back to relying on the .usdz extension
 
-    if proc.returncode != 0 or not os.path.exists(usdz_path):
-        detail = {
-            "error": "usdzconvert_failed",
-            "stdout": (proc.stdout or "")[-1000:],
-            "stderr": (proc.stderr or "")[-1000:],
-        }
-        print("USDZ conversion failed; keeping .glb", detail)
-        if require_usdz:
-            raise HTTPException(status_code=500, detail=detail)
-        return glb_path
+    # try:
+    #     # Reset Blender to an empty scene
+    #     bpy.ops.wm.read_homefile(use_empty=True)  # type: ignore
 
-    return usdz_path
+    #     # Import GLB / GLTF
+    #     bpy.ops.import_scene.gltf(filepath=glb_path)  # type: ignore
+    #     bpy.ops.wm.usd_export(**export_kwargs)  # type: ignore
+    # except Exception as exc:
+    #     if require_usdz:
+    #         raise RuntimeError(f"USDZ conversion failed: {exc}") from exc
+    #     print(f"USDZ conversion failed ({exc}); using original .glb")
+    #     return glb_path
 
+    # if os.path.exists(usdz_path):
+    #     return usdz_path
 
+    # if require_usdz:
+    #     raise RuntimeError(f"USDZ export completed but no file at {usdz_path}")
+    # print("USDZ export did not produce an output file; using original .glb")
+    # return glb_path
+    
 def download_and_zip(finite_annotations_df, positions_by_index):
     if finite_annotations_df.empty:
         print("No .glb candidates available after filtering.")
@@ -346,7 +345,7 @@ def download_and_zip(finite_annotations_df, positions_by_index):
                         f.write(chunk)
 
             # Convert to USDZ for AR-friendly format (fallback to .glb if converter missing)
-            converted_path = convert_glb_to_usdz(out_path_obj)
+            # converted_path = convert_glb_to_usdz(out_path_obj)
 
             # Write a per-object pos.txt (avoid overwriting)
             out_path_txt = os.path.join(download_dir, f"pos_{folder_n}.txt")
@@ -357,8 +356,8 @@ def download_and_zip(finite_annotations_df, positions_by_index):
             # Put both into parent_folder/folder_n/ inside the zip
             folder_name = f"folder_{folder_n}"
             zf.write(
-                converted_path,
-                arcname=f"{parent_folder}/{folder_name}/{os.path.basename(converted_path)}",
+                out_path_obj,
+                arcname=f"{parent_folder}/{folder_name}/{os.path.basename(out_path_obj)}",
             )
             zf.write(out_path_txt, arcname=f"{parent_folder}/{folder_name}/pos.txt")
 
@@ -386,7 +385,14 @@ def main():
     user_prompt = args.prompt
 
     global zip_path
-    zip_path = args.zip_path
+    zip_path_candidate = os.path.abspath(args.zip_path)
+    if os.path.isdir(zip_path_candidate):
+        zip_path_candidate = os.path.join(zip_path_candidate, "assets_bundle.zip")
+    zip_dir = os.path.dirname(zip_path_candidate)
+    if zip_dir:
+        os.makedirs(zip_dir, exist_ok=True)
+    zip_path = zip_path_candidate
+    print("Output zip will be written to:", zip_path)
 
     annotations = load_annotations()
     prepare_subset(annotations)

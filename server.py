@@ -7,6 +7,8 @@ import os
 import requests
 import sys
 import signal
+from fastapi import FastAPI, HTTPException, Form
+
 
 app = FastAPI()
 
@@ -72,17 +74,31 @@ def run_generation(prompt: str):
     return zip_path
 
 @app.post("/generate")
-def generate(req: GenerateRequest):
-    zip_path = run_generation(req.prompt)
-    return FileResponse(zip_path, media_type="application/zip", filename="assets_bundle.zip")
+def generate_post(prompt: str = Form(...)):
+    """
+    POST /generate
+    Accepts: application/x-www-form-urlencoded with field 'prompt'
+    Returns: assets_bundle.zip
+    """
+    zip_path = run_generation(prompt)
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename="assets_bundle.zip",
+    )
 
 @app.get("/generate")
 def generate_get(prompt: str):
     """
-    Convenience GET endpoint so callers can supply ?prompt=... and receive the zip.
+    GET /generate?prompt=...
+    Convenience endpoint for browsers / curl.
     """
     zip_path = run_generation(prompt)
-    return FileResponse(zip_path, media_type="application/zip", filename="assets_bundle.zip")
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename="assets_bundle.zip",
+    )
 
 def check_ollama(timeout: float = 1.0) -> dict:
     """
