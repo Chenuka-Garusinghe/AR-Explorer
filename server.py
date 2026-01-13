@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 import subprocess
 import uuid
 import os
@@ -18,9 +17,6 @@ PROGRAM = os.path.abspath("./main.py")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama:latest")  # safest default
-
-class GenerateRequest(BaseModel):
-    prompt: str
 
 def run_generation(prompt: str):
     ensure_ollama_ready()
@@ -40,7 +36,7 @@ def run_generation(prompt: str):
             text=True,
             cwd=os.path.dirname(PROGRAM),   # important for your relative data/ paths
             env=env,
-            timeout=900,                    # 15 min; adjust if needed
+            timeout=900,                    # 15 min; adjust if needed to avoid timeouts
         )
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="PROGRAM_timeout")
@@ -73,19 +69,6 @@ def run_generation(prompt: str):
 
     return zip_path
 
-@app.post("/generate")
-def generate_post(prompt: str = Form(...)):
-    """
-    POST /generate
-    Accepts: application/x-www-form-urlencoded with field 'prompt'
-    Returns: assets_bundle.zip
-    """
-    zip_path = run_generation(prompt)
-    return FileResponse(
-        zip_path,
-        media_type="application/zip",
-        filename="assets_bundle.zip",
-    )
 
 @app.get("/generate")
 def generate_get(prompt: str):
@@ -103,7 +86,7 @@ def generate_get(prompt: str):
 def check_ollama(timeout: float = 1.0) -> dict:
     """
     Returns a dict describing Ollama status.
-    Raises no exceptions (caller can decide how to respond).
+    Raises no exceptions (caller can decide how to respond to this).
     """
     status = {
         "ok": False,
