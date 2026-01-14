@@ -1,5 +1,5 @@
 # AR-Explorer
-Trying to exlplore Apples ARKit and seeing if an LLM can put together a world from a list of objects
+Exploring AR Apps and seeing if an LLM can put together objects for me
 
 # AR Explorer
 Pipeline for exploring Objaverse assets, indexing their labels, and generating novel 3D-aware views with Zero123-XL for AR scene prototyping.
