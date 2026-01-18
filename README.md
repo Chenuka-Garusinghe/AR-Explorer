@@ -75,14 +75,7 @@ I will store each object recived on a folder locally called `/Scene_objects`. We
   - Start the API on the Mac with a public bind: uvicorn server:app --host 0.0.0.0 --port 8000.
   - Find the Mac’s Wi‑Fi IP: ipconfig getifaddr en0 (e.g., 192.168.1.23). Both devices must be on the same network and the Mac firewall must allow inbound
     8000.
-  - In AppleARKit/LLMVerse/LLMVerse/ContentView.swift, change the URL to that IP, e.g.:
 
-    let baseURL = "http://192.168.1.23:8000"
-    let request = AF.download("\(baseURL)/generate", parameters: ["prompt": prompt], to: { ... })
-  - Add ATS/Local Network allowances in Info.plist for the IP while developing:
-      - NSAppTransportSecurity → NSAllowsArbitraryLoads = YES (or an exception domain for the IP).
-      - NSLocalNetworkUsageDescription with a short reason.
-  - Sanity check from the iPad browser: http://192.168.1.23:8000/health should return JSON; if not, fix firewall/bind/IP first.
-
-  Note: once connectivity works, adjust the unzip logic—your zip contains nested parent_folder/folder_n directories and pos.txt is JSON like [x,y,z], so the
-  current flat directory scan and comma-split won’t load anchors.
+# make sure to add these dependencies
+bun add three
+bun add -d @types/webxr
