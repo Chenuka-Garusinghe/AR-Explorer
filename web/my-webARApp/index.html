@@ -2,10 +2,9 @@
 <html lang="en">
 	<head>
 		<title>Lecture 3.9</title>
-		<meta charset="utf-8">
+        <meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
         <!--favicon -->
-		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
         <link rel="apple-touch-icon" sizes="180x180" href="../../css/favicon/apple-touch-icon.png">
         <link rel="icon" type="image/png" sizes="32x32" href="../../css/favicon/favicon-32x32.png">
         <link rel="icon" type="image/png" sizes="16x16" href="../../css/favicon/favicon-16x16.png">
@@ -22,13 +21,41 @@
         </style>
 	</head>
 	<body>
+        <div>
+  <label for="price" class="block text-sm/6 font-medium text-white">Price</label>
+  <div class="mt-2">
+    <div class="flex items-center rounded-md bg-white/5 pl-3 outline-1 -outline-offset-1 outline-gray-600 has-[input:focus-within]:outline-2 has-[input:focus-within]:-outline-offset-2 has-[input:focus-within]:outline-indigo-500">
+      <div class="shrink-0 text-base text-gray-400 select-none sm:text-sm/6">$</div>
+      <form method="post" onsubmit="return parsePrompt(event);">
+      <input id="promptBox" type="text" name="price" placeholder="0.00" class="block min-w-0 grow bg-gray-800 py-1.5 pr-3 pl-1 text-base text-white placeholder:text-gray-500 focus:outline-none sm:text-sm/6" />
+      </form>
+    </div>
+  </div>
+</div>
+
         <script type="module">
             import { App } from './src/main.js';
+            
+            // Make the function global so the form can call it
+            window.parsePrompt = function(event) {
+              if (event?.preventDefault) {
+                event.preventDefault();  // Stop form from reloading page
+              }
+              
+              const prompt = document.getElementById("promptBox").value;
+              console.log("Prompt entered:", prompt);
 
-            document.addEventListener("DOMContentLoaded", function(){
-                const app = new App();
+              if (prompt) {
+                window.PROMPT = prompt;
+                // Create the app AFTER we have the prompt
+                const app = new App(prompt);
                 window.app = app;
-            });
+              } else {
+                alert("Please enter a prompt");
+              }
+              
+              return false;
+            }
         </script>
 	</body>
 </html>

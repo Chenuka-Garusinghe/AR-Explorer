@@ -7,6 +7,7 @@ export default defineConfig({
       "f488b18d8cad.ngrok-free.app",
       "6ce96c8a350e.ngrok-free.app",
       "c8e7801e2f95.ngrok-free.app",
+      "869c315ec574.ngrok-free.app",
     ],
   },
   plugins: [
